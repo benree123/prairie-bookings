@@ -1,0 +1,50 @@
+name: Build and booking checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore and build
+        run: |
+          dotnet restore
+          dotnet build --no-restore --configuration Release
+      - name: Start app and verify API
+        shell: pwsh
+        run: |
+          $server = Start-Process dotnet -ArgumentList 'run', '--no-build', '--configuration', 'Release', '--urls', 'http://localhost:5080' -PassThru -RedirectStandardOutput server.log -RedirectStandardError server-error.log
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try { $null = Invoke-RestMethod 'http://localhost:5080/api/catalog'; $ready = $true; break } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'App did not become ready' }
+            ./tests/smoke.ps1
+          } finally {
+            Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+            Get-Content server.log, server-error.log -ErrorAction SilentlyContinue
+          }
+      - name: Verify staff access and availability
+        shell: pwsh
+        run: |
+          $env:Staff__Password = [guid]::NewGuid().ToString('N')
+          $env:PRAIRIE_TEST_PASSWORD = $env:Staff__Password
+          $env:ConnectionStrings__Bookings = 'Data Source=App_Data/staff-ci.db'
+          $server = Start-Process dotnet -ArgumentList 'run', '--no-build', '--configuration', 'Release', '--urls', 'http://localhost:5081' -PassThru -RedirectStandardOutput staff-server.log -RedirectStandardError staff-server-error.log
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try { $null = Invoke-RestMethod 'http://localhost:5081/api/catalog'; $ready = $true; break } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'Staff test app did not become ready' }
+            python3 tests/staff_smoke.py
+            if ($LASTEXITCODE -ne 0) { throw 'Staff checks failed' }
+          } finally {
+            Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+            Get-Content staff-server.log, staff-server-error.log -ErrorAction SilentlyContinue
+          }

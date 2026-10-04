@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+*.mdf
+*.ldf
+appsettings.*.local.json
+.env
+App_Data/
+TestResults/

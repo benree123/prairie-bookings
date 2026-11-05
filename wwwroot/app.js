@@ -112,7 +112,10 @@ $('booking-form').addEventListener('submit', async event => {
     const service = catalog.services.find(x => x.id === result.serviceId).name;
     const provider = catalog.providers.find(x => x.id === result.providerId).name;
     $('confirmation-details').textContent = `${service} with ${provider} · ${dateLabel(result.startsAt.slice(0,10))} at ${timeLabel(result.startsAt)} MT`;
-    $('booking-form').reset(); message('booking-message',''); message('copy-message','');
+    // reset() would clear the date set by script, so keep the choices for the next booking.
+    const keptDate = $('date').value, keptProvider = $('provider').value;
+    $('booking-form').reset(); $('date').value = keptDate; $('provider').value = keptProvider;
+    message('booking-message',''); message('copy-message','');
     panel('confirmation'); $('confirmation-panel').focus(); await loadSlots();
   } catch (error) { message('booking-message',error.message,true); await loadSlots(); }
   finally { submitting = false; summary(); }
@@ -134,6 +137,12 @@ $('cancel-form').addEventListener('submit', async event => {
 async function init() {
   try {
     catalog = await api('/api/catalog');
+    if (catalog.demo) {
+      const notice = document.createElement('p'); notice.className = 'demo-notice'; notice.setAttribute('role','status');
+      notice.append('Portfolio demo: use a made-up name and email. No email is sent, and data resets regularly. ');
+      const link = document.createElement('a'); link.href = '/staff.html'; link.textContent = 'Try the staff workspace ↗';
+      notice.append(link); $('main').prepend(notice);
+    }
     [['service',catalog.services],['provider',catalog.providers]].forEach(([id,items]) => items.forEach(item => {
       const option = document.createElement('option'); option.value = item.id; option.textContent = item.name; $(id).append(option);
     }));

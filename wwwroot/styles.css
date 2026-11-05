@@ -4,3 +4,5 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 
 .floating-card:hover{border-color:var(--orange);box-shadow:0 15px 35px #172c4020}.floating-card:focus-visible{outline:3px solid var(--orange);outline-offset:5px}
+
+.demo-notice{margin:0;padding:12px 20px;background:#eef6ef;color:#1f3d2b;text-align:center;font-size:.92rem}.demo-notice a{font-weight:700;color:inherit}.demo-entry{margin:0 0 20px}.demo-entry p{margin:10px 0 0}

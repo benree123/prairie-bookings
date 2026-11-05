@@ -37,6 +37,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<BookingDb>();
     db.Database.EnsureCreated();
     await StaffEndpoints.UpgradeSchema(db);
+    if (app.Configuration.GetValue<bool>("Demo:Enabled")) await DemoData.Ensure(db);
 }
 
 app.Use(async (context, next) =>
@@ -57,6 +58,7 @@ StaffEndpoints.Map(app);
 app.MapGet("/api/catalog", () => Results.Ok(new
 {
     services = Schedule.Services, providers = Schedule.Providers,
+    demo = app.Configuration.GetValue<bool>("Demo:Enabled"),
     timezone = "America/Edmonton", today = Schedule.Now.ToString("yyyy-MM-dd"),
     lastDate = Schedule.Now.Date.AddDays(30).ToString("yyyy-MM-dd")
 }));
@@ -83,6 +85,8 @@ app.MapPost("/api/bookings", async (BookingRequest request, BookingDb db) =>
     var email = request.Email?.Trim() ?? "";
     if (name.Length is < 2 or > 100 || email.Length > 254 || !MailAddress.TryCreate(email, out var address) || address.Address != email)
         return Results.BadRequest(new { error = "Enter a name of 2–100 characters and a valid email address." });
+    if (email.EndsWith(DemoData.SampleDomain, StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Use a different email address." });
     var reference = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
     var booking = new Booking { ProviderId = request.ProviderId, ServiceId = request.ServiceId, StartsAt = start,
         CustomerName = name, Email = email, ReferenceHash = Schedule.Hash(reference) };

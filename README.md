@@ -4,6 +4,8 @@ A full-stack appointment booking portfolio project for a fictional Alberta servi
 
 **Stack:** C# · ASP.NET Core 10 Minimal APIs · Cookie authentication · Entity Framework Core · SQL (SQLite by default, SQL Server optional) · JavaScript · HTML/CSS · PowerShell/Python integration tests.
 
+**[Try the live demo](https://prairie-bookings.onrender.com)**, or go straight to the [staff workspace](https://prairie-bookings.onrender.com/staff.html). All sample data is fictional and resets regularly. The free host can take 50 seconds or more to wake up.
+
 ## Run locally
 
 Install the .NET 10 SDK. No separate database installation is needed for SQLite.

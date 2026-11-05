@@ -94,14 +94,26 @@ public static class StaffEndpoints
             return Results.Ok(new { username = credentials.Username });
         }).RequireRateLimiting("staff-login");
 
-        group.MapGet("/session", (HttpContext context) => Results.Ok(new { username = context.User.Identity!.Name })).RequireAuthorization("Staff");
+        // One-click access for portfolio visitors. Off unless Demo:Enabled is true.
+        group.MapPost("/demo", async (StaffCredentials credentials, BookingDb db, IConfiguration configuration, HttpContext context) =>
+        {
+            if (!configuration.GetValue<bool>("Demo:Enabled")) return Results.NotFound(new { error = "The staff demo is not enabled." });
+            await DemoData.Ensure(db);
+            var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, credentials.Username), new Claim(ClaimTypes.Role, "Staff"), new Claim("credential-version", credentials.SecurityStamp), new Claim(DemoData.GuestClaim, "true")], CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = false });
+            return Results.Ok(new { username = "Demo guest", guest = true });
+        }).RequireRateLimiting("writes");
+
+        group.MapGet("/session", (HttpContext context) => context.User.HasClaim(DemoData.GuestClaim, "true")
+            ? Results.Ok(new { username = "Demo guest", guest = true })
+            : Results.Ok(new { username = context.User.Identity!.Name, guest = false })).RequireAuthorization("Staff");
         group.MapPost("/logout", async (HttpContext context) =>
         {
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.Ok(new { message = "Signed out." });
         }).RequireAuthorization("Staff");
 
-        group.MapGet("/appointments", async (string from, string to, int? providerId, string? status, BookingDb db) =>
+        group.MapGet("/appointments", async (string from, string to, int? providerId, string? status, BookingDb db, HttpContext context) =>
         {
             if (!Schedule.TryDate(from, out var start) || !Schedule.TryDate(to, out var end) || end < start || (end - start).TotalDays > 90)
                 return Results.BadRequest(new { error = "Choose a date range of up to 90 days." });
@@ -125,7 +137,11 @@ public static class StaffEndpoints
             var totalMatches = await query.CountAsync();
             var records = await query.OrderBy(x => x.StartsAt).ThenBy(x => x.Id).Take(200)
                 .Select(x => new { x.Id, x.CustomerName, x.Email, x.ProviderId, x.ServiceId, x.StartsAt, x.IsCancelled }).ToListAsync();
-            var appointments = records.Select(x => new { x.Id, x.CustomerName, x.Email,
+            // Demo guests must never see what other visitors typed into the public booking form.
+            var guest = context.User.HasClaim(DemoData.GuestClaim, "true");
+            var appointments = records.Select(x => new { x.Id,
+                CustomerName = guest && !DemoData.IsSample(x.Email) ? "Website visitor" : x.CustomerName,
+                Email = guest && !DemoData.IsSample(x.Email) ? "Hidden in demo" : x.Email,
                 provider = Schedule.Providers.Single(p => p.Id == x.ProviderId).Name,
                 service = Schedule.Services.Single(s => s.Id == x.ServiceId).Name,
                 startsAt = x.StartsAt.ToString("yyyy-MM-dd'T'HH:mm:ss"),
@@ -153,13 +169,14 @@ public static class StaffEndpoints
             return Results.Ok(new { blocks = records.Select(x => new { x.Id, startsAt = x.StartsAt.ToString("yyyy-MM-dd'T'HH:mm:ss"), x.reason }) });
         }).RequireAuthorization("Staff");
 
-        group.MapPost("/blocks", async (StaffBlock request, BookingDb db) =>
+        group.MapPost("/blocks", async (StaffBlock request, BookingDb db, HttpContext context) =>
         {
             if (!Schedule.Providers.Any(x => x.Id == request.ProviderId)
                 || !DateTime.TryParseExact(request.StartsAt, "yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)
                 || !Schedule.ValidDay(start.Date) || !Schedule.Slots(start.Date).Contains(start))
                 return Results.BadRequest(new { error = "Choose a valid future appointment slot." });
             var reason = request.Reason?.Trim() ?? "";
+            if (context.User.HasClaim(DemoData.GuestClaim, "true")) reason = "Blocked in the demo";
             if (reason.Length is < 2 or > 100) return Results.BadRequest(new { error = "Enter a reason of 2–100 characters." });
             // Blocks share the booking table's unique active reservation index.
             // Blocking an occupied slot fails, including a concurrent customer booking.
@@ -179,6 +196,40 @@ public static class StaffEndpoints
             block.IsCancelled = true; await db.SaveChangesAsync();
             return Results.Ok(new { message = "Block removed. Future slots are available to book." });
         }).RequireAuthorization("Staff").RequireRateLimiting("writes");
+    }
+}
+
+public static class DemoData
+{
+    public const string SampleDomain = "@sample.prairiebookings.test";
+    public const string GuestClaim = "demo-guest";
+    private static readonly string[] Names = ["Maya Singh", "Noah Tremblay", "Priya Nair", "Liam Chen", "Ava Bouchard", "Ethan Wright", "Zara Ahmed", "Owen Fraser"];
+    public static bool IsSample(string email) => email.EndsWith(SampleDomain, StringComparison.OrdinalIgnoreCase);
+
+    // Keeps a few fictional upcoming appointments available without touching other rows.
+    public static async Task Ensure(BookingDb db)
+    {
+        var now = Schedule.Now;
+        var active = await db.Bookings.Where(x => !x.IsCancelled && !x.IsBlocked && x.StartsAt > now && x.Email.EndsWith(SampleDomain)).CountAsync();
+        var taken = await db.Bookings.Where(x => !x.IsCancelled && x.StartsAt > now).Select(x => new { x.ProviderId, x.StartsAt }).ToListAsync();
+        var used = taken.Select(x => (x.ProviderId, x.StartsAt)).ToHashSet();
+        var number = 0;
+        for (var day = now.Date; active < Names.Length && day <= now.Date.AddDays(30); day = day.AddDays(1))
+            foreach (var slot in Schedule.Slots(day).Where(x => x.Hour is 10 or 14 && x.Minute == 0))
+            {
+                if (active >= Names.Length) break;
+                var providerId = number % Schedule.Providers.Length + 1;
+                if (used.Add((providerId, slot)))
+                {
+                    var name = Names[number % Names.Length];
+                    db.Bookings.Add(new Booking { ProviderId = providerId, ServiceId = number % Schedule.Services.Length + 1, StartsAt = slot, CustomerName = name,
+                        Email = name.Split(' ')[0].ToLowerInvariant() + SampleDomain, ReferenceHash = Schedule.Hash(Convert.ToHexString(RandomNumberGenerator.GetBytes(16))) });
+                    active++;
+                }
+                number++;
+            }
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException) { db.ChangeTracker.Clear(); } // A concurrent request already took the slot.
     }
 }
 

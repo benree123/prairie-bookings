@@ -26,6 +26,7 @@ def check(condition,name):
     print('PASS:',name)
 try:
     catalog=call('/api/catalog')[1]
+    check(call('/api/staff/demo',{})[0]==404,'Staff demo is off by default')
     day=datetime.date.fromisoformat(catalog['today'])+datetime.timedelta(days=2)
     while day.weekday()>=5: day+=datetime.timedelta(days=1)
     date=day.isoformat();start=date+'T10:00:00'

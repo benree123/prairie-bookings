@@ -2,11 +2,11 @@
 
 A full-stack appointment booking portfolio project for a fictional Alberta service business. Customers choose an advisor and a weekday time, reserve a 30-minute session, and cancel using a private reference.
 
-**Stack:** C# · ASP.NET Core 8 Minimal APIs · Cookie authentication · Entity Framework Core · SQL (SQLite by default, SQL Server optional) · JavaScript · HTML/CSS · PowerShell/Python integration tests.
+**Stack:** C# · ASP.NET Core 10 Minimal APIs · Cookie authentication · Entity Framework Core · SQL (SQLite by default, SQL Server optional) · JavaScript · HTML/CSS · PowerShell/Python integration tests.
 
 ## Run locally
 
-Install the .NET 8 SDK or a newer SDK that can target .NET 8, and the ASP.NET Core 8 runtime. No separate database installation is needed for SQLite.
+Install the .NET 10 SDK. No separate database installation is needed for SQLite.
 
 ```powershell
 dotnet restore
@@ -128,9 +128,9 @@ The account must be able to create the dedicated database. `EnsureCreated` is us
 
 ## Publish and extend
 
-The repository includes GitHub Actions for build and API smoke tests. See `PUBLISHING.md` for GitHub setup and `LINKEDIN.md` for the project description, launch post, and resume bullet.
+The repository includes GitHub Actions for the build, API checks, and a container check of the staff demo.
 
-The app currently runs locally. A backend host is required for a live demo; GitHub Pages cannot run ASP.NET Core. Use a durable database or persistent volume if hosting SQLite. Configure HTTPS, `AllowedHosts`, appropriate retention for contact information, and proxy-aware rate limiting before accepting real users. Protect the data-protection key directory and configure key encryption for a hosted environment; the local version persists keys to the ignored `App_Data/keys` directory. This demo is not intended for real medical or other sensitive appointments.
+The `Dockerfile` runs the app on a container host. Set `Demo__Enabled=true` for the portfolio demo, which adds fictional bookings and a one-click staff guest. Guests cannot see other visitors' names or emails, and blocks use a fixed reason. SQLite data in a container is lost when the service restarts, so use this mode only for fictional data. For anything else, use a durable database or persistent volume if hosting SQLite. Configure HTTPS, `AllowedHosts`, appropriate retention for contact information, and proxy-aware rate limiting before accepting real users. Protect the data-protection key directory and configure key encryption for a hosted environment; the local version persists keys to the ignored `App_Data/keys` directory. This demo is not intended for real medical or other sensitive appointments.
 
 ## License
 

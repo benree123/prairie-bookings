@@ -1,0 +1,7 @@
+bin/
+obj/
+.git/
+.github/
+App_Data/
+tests/
+*.md
